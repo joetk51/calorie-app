@@ -81,16 +81,19 @@ input[type="text"],
 input[type="number"],
 input[type="password"],
 input[type="date"],
-input[type="datetime-local"] {
+input[type="datetime-local"],
+textarea {
   display: block;
   width: 100%;
   margin-top: 4px;
   padding: 10px 12px;
   font-size: 1rem;
+  font-family: inherit;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--bg);
   color: var(--text);
+  resize: vertical;
 }
 
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -116,6 +119,7 @@ button {
 .btn-primary:active:not(:disabled) { background: var(--primary-dark); }
 
 .btn-secondary {
+  display: block;
   width: 100%;
   background: transparent;
   color: var(--primary);
@@ -124,6 +128,8 @@ button {
   font-weight: 600;
   padding: 12px;
   border-radius: 12px;
+  text-align: center;
+  cursor: pointer;
 }
 
 .btn-danger {
