@@ -486,7 +486,7 @@ function loadSettingsToForm() {
 
 $('#btn-save-settings').addEventListener('click', () => {
   settings.apiKey = $('#s-apikey').value.trim();
-  settings.model = $('#s-model').value.trim() || defaultSettings.model;
+  settings.model = $('#s-model').value.trim().toLowerCase() || defaultSettings.model;
   saveSettings();
   toast('設定を保存しました');
 });
