@@ -93,8 +93,7 @@ document.querySelectorAll('.tab-btn').forEach((btn) => {
 let analysisImageBase64 = null; // 解析用(大きめ)
 let storedThumbnail = null; // 保存用(小さめ)
 
-$('#photo-input').addEventListener('change', async (e) => {
-  const file = e.target.files[0];
+async function handlePhotoFile(file) {
   if (!file) return;
 
   const [analysisDataUrl, thumbDataUrl] = await Promise.all([
@@ -110,7 +109,9 @@ $('#photo-input').addEventListener('change', async (e) => {
   $('#photo-placeholder').hidden = true;
   $('#btn-analyze').disabled = false;
   $('#result-card').hidden = true;
-});
+}
+$('#photo-input-camera').addEventListener('change', (e) => handlePhotoFile(e.target.files[0]));
+$('#photo-input-gallery').addEventListener('change', (e) => handlePhotoFile(e.target.files[0]));
 
 const ANALYSIS_PROMPT = `あなたは経験豊富な管理栄養士です。添付された食事の写真を見て、写っている料理・食品をすべて特定し、量を推定したうえで、合計の栄養価を計算してください。
 出力は必ず次のJSON形式のみとし、説明文やマークダウンのコードブロックは一切付けないでください。
@@ -124,19 +125,39 @@ const ANALYSIS_PROMPT = `あなたは経験豊富な管理栄養士です。添�
   "note": "量や材料の推定根拠を一言で(20文字程度)"
 }`;
 
-async function callGemini(base64Image) {
+const TEXT_ANALYSIS_PROMPT = `あなたは経験豊富な管理栄養士です。ユーザーが入力した食事内容の説明文から、含まれる食品とその分量を読み取り、合計の栄養価を計算してください。分量が明記されていない食品は一般的な1人前として推定してください。
+出力は必ず次のJSON形式のみとし、説明文やマークダウンのコードブロックは一切付けないでください。
+{
+  "foodName": "料理名（日本語、複数ある場合はまとめて短く。例: 白米200g・プロテイン30g）",
+  "calories": 合計カロリー(kcal, 数値),
+  "protein": たんぱく質の合計(g, 数値),
+  "fat": 脂質の合計(g, 数値),
+  "carb": 炭水化物の合計(g, 数値),
+  "confidence": "high" | "medium" | "low",
+  "note": "量や材料の推定根拠を一言で(20文字程度)"
+}
+
+ユーザーの入力: `;
+
+function callGemini(base64Image) {
+  return callGeminiAPI([
+    { text: ANALYSIS_PROMPT },
+    { inline_data: { mime_type: 'image/jpeg', data: base64Image } },
+  ]);
+}
+
+function callGeminiText(description) {
+  return callGeminiAPI([{ text: TEXT_ANALYSIS_PROMPT + description }]);
+}
+
+async function callGeminiAPI(parts) {
   const { apiKey, model } = settings;
   if (!apiKey) {
     throw new Error('設定タブでGemini APIキーを入力してください。');
   }
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
   const body = {
-    contents: [{
-      parts: [
-        { text: ANALYSIS_PROMPT },
-        { inline_data: { mime_type: 'image/jpeg', data: base64Image } },
-      ],
-    }],
+    contents: [{ parts }],
     generationConfig: {
       responseMimeType: 'application/json',
       responseSchema: {
@@ -175,7 +196,7 @@ async function callGemini(base64Image) {
   const data = await res.json();
   const candidate = data.candidates && data.candidates[0];
   if (!candidate || candidate.finishReason === 'SAFETY') {
-    throw new Error('この画像は解析できませんでした。');
+    throw new Error('内容を解析できませんでした。');
   }
   const text = candidate.content?.parts?.map((p) => p.text || '').join('') || '';
   let parsed;
@@ -212,6 +233,38 @@ $('#btn-analyze').addEventListener('click', async () => {
     statusEl.textContent = '⚠️ ' + err.message;
   } finally {
     $('#btn-analyze').disabled = false;
+  }
+});
+
+$('#btn-analyze-text').addEventListener('click', async () => {
+  const description = $('#text-input').value.trim();
+  if (!description) { toast('食べた内容を入力してください'); return; }
+
+  const statusEl = $('#analyze-text-status');
+  statusEl.hidden = false;
+  statusEl.className = 'status';
+  statusEl.textContent = '🔍 AIが解析しています…';
+  $('#btn-analyze-text').disabled = true;
+
+  try {
+    const result = await callGeminiText(description);
+    statusEl.hidden = true;
+    analysisImageBase64 = null;
+    storedThumbnail = null;
+    openResultForm({
+      name: result.foodName || '',
+      cal: Number(result.calories) || 0,
+      p: Number(result.protein) || 0,
+      f: Number(result.fat) || 0,
+      c: Number(result.carb) || 0,
+      note: result.note || '',
+    });
+    toast('解析が完了しました。内容を確認して保存してください。');
+  } catch (err) {
+    statusEl.className = 'status error';
+    statusEl.textContent = '⚠️ ' + err.message;
+  } finally {
+    $('#btn-analyze-text').disabled = false;
   }
 });
 
@@ -268,8 +321,10 @@ $('#btn-save').addEventListener('click', () => {
   $('#result-card').hidden = true;
   $('#photo-preview').hidden = true;
   $('#photo-placeholder').hidden = false;
-  $('#photo-input').value = '';
+  $('#photo-input-camera').value = '';
+  $('#photo-input-gallery').value = '';
   $('#btn-analyze').disabled = true;
+  $('#text-input').value = '';
   analysisImageBase64 = null;
   storedThumbnail = null;
 
