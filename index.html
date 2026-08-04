@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>カロリー記録</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🍽️</text></svg>">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+
+  <header class="app-header">
+    <h1>🍽️ カロリー記録</h1>
+    <div id="header-date"></div>
+  </header>
+
+  <main id="view-container">
+
+    <!-- 記録タブ -->
+    <section id="view-log" class="view active">
+      <div class="card">
+        <input type="file" id="photo-input" accept="image/*" capture="environment" hidden>
+        <label for="photo-input" class="photo-drop" id="photo-drop-label">
+          <img id="photo-preview" hidden alt="プレビュー">
+          <div id="photo-placeholder">📷<br>タップして写真を選択・撮影</div>
+        </label>
+        <button id="btn-analyze" class="btn-primary" disabled>✨ AIで解析する</button>
+        <div id="analyze-status" class="status" hidden></div>
+      </div>
+
+      <div class="card" id="result-card" hidden>
+        <h3>解析結果（内容は編集できます）</h3>
+        <label>料理名
+          <input id="f-name" type="text" placeholder="例: 鶏の唐揚げ定食">
+        </label>
+        <div class="grid-2">
+          <label>カロリー (kcal)
+            <input id="f-cal" type="number" step="1" inputmode="decimal">
+          </label>
+          <label>量の倍率
+            <input id="f-mult" type="number" step="0.1" value="1" inputmode="decimal">
+          </label>
+        </div>
+        <div class="grid-3">
+          <label>P (g)
+            <input id="f-p" type="number" step="0.1" inputmode="decimal">
+          </label>
+          <label>F (g)
+            <input id="f-f" type="number" step="0.1" inputmode="decimal">
+          </label>
+          <label>C (g)
+            <input id="f-c" type="number" step="0.1" inputmode="decimal">
+          </label>
+        </div>
+        <label>日時
+          <input id="f-datetime" type="datetime-local">
+        </label>
+        <label>メモ
+          <input id="f-note" type="text" placeholder="任意">
+        </label>
+        <button id="btn-save" class="btn-primary">✅ 保存する</button>
+      </div>
+
+      <button id="btn-manual" class="btn-secondary">写真なしで手動追加</button>
+    </section>
+
+    <!-- 今日タブ -->
+    <section id="view-today" class="view">
+      <div class="card summary-card">
+        <canvas id="chart-pfc" width="160" height="160"></canvas>
+        <div id="today-numbers"></div>
+      </div>
+      <div class="card">
+        <div class="progress-bar"><div id="cal-progress-fill" class="progress-fill"></div></div>
+        <div id="cal-progress-text" class="hint"></div>
+      </div>
+      <h3 class="list-heading">今日の記録</h3>
+      <div id="today-entries" class="entry-list"></div>
+    </section>
+
+    <!-- 履歴タブ -->
+    <section id="view-history" class="view">
+      <div class="card">
+        <canvas id="chart-week" width="320" height="140"></canvas>
+      </div>
+      <label>日付を選ぶ
+        <input type="date" id="history-date-picker">
+      </label>
+      <div id="history-entries" class="entry-list"></div>
+    </section>
+
+    <!-- 設定タブ -->
+    <section id="view-settings" class="view">
+      <div class="card">
+        <h3>Gemini API設定</h3>
+        <label>APIキー
+          <input id="s-apikey" type="password" placeholder="AIzaSy...">
+        </label>
+        <p class="hint">
+          <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a>
+          で無料取得できます。キーはこの端末のブラウザ内だけに保存され、Google以外には送信されません。
+        </p>
+        <label>モデル名
+          <input id="s-model" type="text" value="gemini-2.5-flash">
+        </label>
+        <button id="btn-save-settings" class="btn-primary">保存</button>
+      </div>
+
+      <div class="card">
+        <h3>1日の目標</h3>
+        <label>カロリー (kcal)
+          <input id="g-cal" type="number" inputmode="decimal">
+        </label>
+        <div class="grid-3">
+          <label>P (g)
+            <input id="g-p" type="number" inputmode="decimal">
+          </label>
+          <label>F (g)
+            <input id="g-f" type="number" inputmode="decimal">
+          </label>
+          <label>C (g)
+            <input id="g-c" type="number" inputmode="decimal">
+          </label>
+        </div>
+        <button id="btn-save-goals" class="btn-primary">目標を保存</button>
+      </div>
+
+      <div class="card">
+        <h3>データ管理</h3>
+        <p class="hint">データはこの端末のブラウザにのみ保存されます。機種変更やブラウザ変更の前にエクスポートしてください。</p>
+        <div class="btn-row">
+          <button id="btn-export" class="btn-secondary">エクスポート</button>
+          <button id="btn-import" class="btn-secondary">インポート</button>
+        </div>
+        <input type="file" id="import-file" accept="application/json" hidden>
+        <button id="btn-clear" class="btn-danger">全データ削除</button>
+      </div>
+    </section>
+
+  </main>
+
+  <nav class="tab-bar">
+    <button class="tab-btn active" data-view="log"><span class="tab-icon">📷</span><span>記録</span></button>
+    <button class="tab-btn" data-view="today"><span class="tab-icon">📊</span><span>今日</span></button>
+    <button class="tab-btn" data-view="history"><span class="tab-icon">🗓️</span><span>履歴</span></button>
+    <button class="tab-btn" data-view="settings"><span class="tab-icon">⚙️</span><span>設定</span></button>
+  </nav>
+
+  <div id="toast" class="toast" hidden></div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
