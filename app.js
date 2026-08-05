@@ -5,7 +5,7 @@ const LS_KEYS = {
   goals: 'calorieApp_goals',
 };
 
-const defaultSettings = { apiKey: '', model: 'gemini-2.5-flash' };
+const defaultSettings = { apiKey: '', model: 'gemini-3.5-flash' };
 const defaultGoals = { calories: 2000, protein: 100, fat: 60, carb: 250 };
 
 function loadJSON(key, fallback) {
