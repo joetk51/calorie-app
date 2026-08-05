@@ -53,13 +53,34 @@ function toLocalDatetimeInputValue(date) {
 
 function fmt1(n) { return Math.round(n * 10) / 10; }
 
-function resizeImage(file, maxWidth, quality) {
+async function resizeImage(file, maxWidth, quality) {
+  // createImageBitmapは縮小しながらデコードできるため、高解像度の写真でも
+  // メモリを使い切りにくい(iOSのSafariで巨大な写真が失敗する対策)
+  if (window.createImageBitmap) {
+    try {
+      const probe = await createImageBitmap(file);
+      const scale = Math.min(1, maxWidth / probe.width);
+      const w = Math.round(probe.width * scale);
+      const h = Math.round(probe.height * scale);
+      probe.close();
+      const bitmap = await createImageBitmap(file, { resizeWidth: w, resizeHeight: h, resizeQuality: 'medium' });
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h);
+      bitmap.close();
+      return canvas.toDataURL('image/jpeg', quality);
+    } catch {
+      // フォールバックへ
+    }
+  }
+
   return new Promise((resolve, reject) => {
     const img = new Image();
     const reader = new FileReader();
-    reader.onerror = reject;
+    reader.onerror = () => reject(new Error('画像の読み込みに失敗しました。'));
     reader.onload = () => {
-      img.onerror = reject;
+      img.onerror = () => reject(new Error('画像の読み込みに失敗しました。解像度が大きすぎる可能性があります。'));
       img.onload = () => {
         const scale = Math.min(1, maxWidth / img.width);
         const w = Math.round(img.width * scale);
@@ -96,19 +117,23 @@ let storedThumbnail = null; // 保存用(小さめ)
 async function handlePhotoFile(file) {
   if (!file) return;
 
-  const [analysisDataUrl, thumbDataUrl] = await Promise.all([
-    resizeImage(file, 800, 0.82),
-    resizeImage(file, 160, 0.6),
-  ]);
+  try {
+    const [analysisDataUrl, thumbDataUrl] = await Promise.all([
+      resizeImage(file, 800, 0.82),
+      resizeImage(file, 160, 0.6),
+    ]);
 
-  analysisImageBase64 = analysisDataUrl.split(',')[1];
-  storedThumbnail = thumbDataUrl;
+    analysisImageBase64 = analysisDataUrl.split(',')[1];
+    storedThumbnail = thumbDataUrl;
 
-  $('#photo-preview').src = analysisDataUrl;
-  $('#photo-preview').hidden = false;
-  $('#photo-placeholder').hidden = true;
-  $('#btn-analyze').disabled = false;
-  $('#result-card').hidden = true;
+    $('#photo-preview').src = analysisDataUrl;
+    $('#photo-preview').hidden = false;
+    $('#photo-placeholder').hidden = true;
+    $('#btn-analyze').disabled = false;
+    $('#result-card').hidden = true;
+  } catch (err) {
+    toast('⚠️ ' + (err.message || '写真の読み込みに失敗しました。別の写真でお試しください。'), 3500);
+  }
 }
 $('#photo-input-camera').addEventListener('change', (e) => handlePhotoFile(e.target.files[0]));
 $('#photo-input-gallery').addEventListener('change', (e) => handlePhotoFile(e.target.files[0]));
@@ -557,5 +582,7 @@ function init() {
   $('#header-date').textContent = new Date().toLocaleDateString('ja-JP', { month: 'long', day: 'numeric', weekday: 'short' });
   loadSettingsToForm();
   renderToday();
+}
+init();
 }
 init();
