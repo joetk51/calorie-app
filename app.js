@@ -188,9 +188,11 @@ async function callGeminiAPI(parts) {
   }
 
   if (!res.ok) {
-    if (res.status === 400) throw new Error('APIキーまたはモデル名が正しくない可能性があります(設定タブを確認)。');
-    if (res.status === 429) throw new Error('無料枠のレート上限に達しました。少し待って再試行してください。');
-    throw new Error(`APIエラー (HTTP ${res.status})`);
+    let detail = '';
+    try { detail = (await res.json()).error?.message || ''; } catch {}
+    if (res.status === 400) throw new Error('APIキーまたはモデル名が正しくない可能性があります(設定タブを確認)。' + (detail ? ` [${detail}]` : ''));
+    if (res.status === 429) throw new Error('無料枠の上限に達しました。少し待って再試行してください。' + (detail ? ` [${detail}]` : ''));
+    throw new Error(`APIエラー (HTTP ${res.status})` + (detail ? ` [${detail}]` : ''));
   }
 
   const data = await res.json();
