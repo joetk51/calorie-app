@@ -584,5 +584,3 @@ function init() {
   renderToday();
 }
 init();
-}
-init();
