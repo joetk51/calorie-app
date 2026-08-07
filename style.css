@@ -205,6 +205,42 @@ button {
   background: none; color: var(--text-muted); font-size: 1.1rem; padding: 4px 6px;
 }
 
+.breakdown {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 14px;
+}
+.breakdown table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.breakdown th, .breakdown td {
+  padding: 8px 10px;
+  text-align: right;
+  white-space: nowrap;
+}
+.breakdown th:first-child, .breakdown td:first-child {
+  text-align: left;
+  white-space: normal;
+}
+.breakdown thead { background: var(--bg); color: var(--text-muted); }
+.breakdown thead th { font-weight: 600; }
+.breakdown tbody tr:not(:last-child) { border-bottom: 1px solid var(--border); }
+.breakdown tfoot td { font-weight: 700; border-top: 2px solid var(--border); background: var(--bg); }
+
+.entry-breakdown {
+  margin-top: 6px;
+  font-size: 0.78rem;
+}
+.entry-breakdown summary {
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px 0;
+}
+.entry-breakdown table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+.entry-breakdown th, .entry-breakdown td { padding: 4px 6px; text-align: right; }
+.entry-breakdown th:first-child, .entry-breakdown td:first-child { text-align: left; }
+.entry-breakdown thead { color: var(--text-muted); }
+.entry-breakdown tbody tr { border-top: 1px solid var(--border); }
+
 .summary-card { display: flex; align-items: center; gap: 16px; }
 #today-numbers { flex: 1; font-size: 0.85rem; }
 .pfc-row { display: flex; justify-content: space-between; margin-bottom: 6px; }

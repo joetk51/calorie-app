@@ -138,29 +138,29 @@ async function handlePhotoFile(file) {
 $('#photo-input-camera').addEventListener('change', (e) => handlePhotoFile(e.target.files[0]));
 $('#photo-input-gallery').addEventListener('change', (e) => handlePhotoFile(e.target.files[0]));
 
-const ANALYSIS_PROMPT = `あなたは経験豊富な管理栄養士です。添付された食事の写真を見て、写っている料理・食品をすべて特定し、量を推定したうえで、合計の栄養価を計算してください。
+const ANALYSIS_PROMPT = `あなたは経験豊富な管理栄養士です。添付された食事の写真を見て、写っている料理・食品を1品ずつ分けて特定し、それぞれの量を推定したうえで栄養価を計算してください。
 出力は必ず次のJSON形式のみとし、説明文やマークダウンのコードブロックは一切付けないでください。
 {
-  "foodName": "料理名（日本語、複数ある場合はまとめて短く。例: 鶏の唐揚げ定食）",
-  "calories": 合計カロリー(kcal, 数値),
-  "protein": たんぱく質の合計(g, 数値),
-  "fat": 脂質の合計(g, 数値),
-  "carb": 炭水化物の合計(g, 数値),
-  "confidence": "high" | "medium" | "low",
-  "note": "量や材料の推定根拠を一言で(20文字程度)"
-}`;
-
-const TEXT_ANALYSIS_PROMPT = `あなたは経験豊富な管理栄養士です。ユーザーが入力した食事内容の説明文から、含まれる食品とその分量を読み取り、合計の栄養価を計算してください。分量が明記されていない食品は一般的な1人前として推定してください。
-出力は必ず次のJSON形式のみとし、説明文やマークダウンのコードブロックは一切付けないでください。
-{
-  "foodName": "料理名（日本語、複数ある場合はまとめて短く。例: 白米200g・プロテイン30g）",
-  "calories": 合計カロリー(kcal, 数値),
-  "protein": たんぱく質の合計(g, 数値),
-  "fat": 脂質の合計(g, 数値),
-  "carb": 炭水化物の合計(g, 数値),
+  "mealName": "この食事全体の短い名前（日本語。例: 鶏の唐揚げ定食）",
+  "items": [
+    { "name": "食品名と推定量（例: 白米200g）", "calories": kcal(数値), "protein": g(数値), "fat": g(数値), "carb": g(数値) }
+  ],
   "confidence": "high" | "medium" | "low",
   "note": "量や材料の推定根拠を一言で(20文字程度)"
 }
+itemsは写っている食品ごとに分けること（例: ご飯・主菜・汁物・プロテインなどはそれぞれ別の要素にする）。`;
+
+const TEXT_ANALYSIS_PROMPT = `あなたは経験豊富な管理栄養士です。ユーザーが入力した食事内容の説明文から、含まれる食品を1つずつ分けて特定し、記載された分量をもとに栄養価を計算してください。分量が明記されていない食品は一般的な1人前として推定してください。
+出力は必ず次のJSON形式のみとし、説明文やマークダウンのコードブロックは一切付けないでください。
+{
+  "mealName": "この食事全体の短い名前（日本語。例: 白米200g・プロテイン30g）",
+  "items": [
+    { "name": "食品名と推定量（例: 白米200g）", "calories": kcal(数値), "protein": g(数値), "fat": g(数値), "carb": g(数値) }
+  ],
+  "confidence": "high" | "medium" | "low",
+  "note": "量や材料の推定根拠を一言で(20文字程度)"
+}
+itemsはユーザーが挙げた食品ごとに分けること。
 
 ユーザーの入力: `;
 
@@ -188,15 +188,25 @@ async function callGeminiAPI(parts) {
       responseSchema: {
         type: 'OBJECT',
         properties: {
-          foodName: { type: 'STRING' },
-          calories: { type: 'NUMBER' },
-          protein: { type: 'NUMBER' },
-          fat: { type: 'NUMBER' },
-          carb: { type: 'NUMBER' },
+          mealName: { type: 'STRING' },
+          items: {
+            type: 'ARRAY',
+            items: {
+              type: 'OBJECT',
+              properties: {
+                name: { type: 'STRING' },
+                calories: { type: 'NUMBER' },
+                protein: { type: 'NUMBER' },
+                fat: { type: 'NUMBER' },
+                carb: { type: 'NUMBER' },
+              },
+              required: ['name', 'calories', 'protein', 'fat', 'carb'],
+            },
+          },
           confidence: { type: 'STRING' },
           note: { type: 'STRING' },
         },
-        required: ['foodName', 'calories', 'protein', 'fat', 'carb'],
+        required: ['mealName', 'items'],
       },
     },
   };
@@ -246,14 +256,7 @@ $('#btn-analyze').addEventListener('click', async () => {
   try {
     const result = await callGemini(analysisImageBase64);
     statusEl.hidden = true;
-    openResultForm({
-      name: result.foodName || '',
-      cal: Number(result.calories) || 0,
-      p: Number(result.protein) || 0,
-      f: Number(result.fat) || 0,
-      c: Number(result.carb) || 0,
-      note: result.note || '',
-    });
+    openResultForm(buildResultFromResponse(result));
     toast('解析が完了しました。内容を確認して保存してください。');
   } catch (err) {
     statusEl.className = 'status error';
@@ -262,6 +265,33 @@ $('#btn-analyze').addEventListener('click', async () => {
     $('#btn-analyze').disabled = false;
   }
 });
+
+function buildResultFromResponse(result) {
+  const items = Array.isArray(result.items)
+    ? result.items.map((i) => ({
+        name: i.name || '',
+        calories: Number(i.calories) || 0,
+        protein: Number(i.protein) || 0,
+        fat: Number(i.fat) || 0,
+        carb: Number(i.carb) || 0,
+      }))
+    : [];
+  const totals = items.reduce((acc, i) => ({
+    cal: acc.cal + i.calories,
+    p: acc.p + i.protein,
+    f: acc.f + i.fat,
+    c: acc.c + i.carb,
+  }), { cal: 0, p: 0, f: 0, c: 0 });
+  return {
+    name: result.mealName || items[0]?.name || '',
+    cal: totals.cal,
+    p: totals.p,
+    f: totals.f,
+    c: totals.c,
+    note: result.note || '',
+    items,
+  };
+}
 
 $('#btn-analyze-text').addEventListener('click', async () => {
   const description = $('#text-input').value.trim();
@@ -278,14 +308,7 @@ $('#btn-analyze-text').addEventListener('click', async () => {
     statusEl.hidden = true;
     analysisImageBase64 = null;
     storedThumbnail = null;
-    openResultForm({
-      name: result.foodName || '',
-      cal: Number(result.calories) || 0,
-      p: Number(result.protein) || 0,
-      f: Number(result.fat) || 0,
-      c: Number(result.carb) || 0,
-      note: result.note || '',
-    });
+    openResultForm(buildResultFromResponse(result));
     toast('解析が完了しました。内容を確認して保存してください。');
   } catch (err) {
     statusEl.className = 'status error';
@@ -296,9 +319,38 @@ $('#btn-analyze-text').addEventListener('click', async () => {
 });
 
 let baseValues = { cal: 0, p: 0, f: 0, c: 0 };
+let baseItems = [];
 
-function openResultForm({ name, cal, p, f, c, note }) {
+function renderBreakdown(items, mult) {
+  const el = $('#items-breakdown');
+  if (!items || items.length === 0) {
+    el.hidden = true;
+    el.innerHTML = '';
+    return;
+  }
+  const scaled = items.map((i) => ({
+    name: i.name,
+    cal: i.calories * mult,
+    p: i.protein * mult,
+    f: i.fat * mult,
+    c: i.carb * mult,
+  }));
+  const total = scaled.reduce((a, i) => ({ cal: a.cal + i.cal, p: a.p + i.p, f: a.f + i.f, c: a.c + i.c }), { cal: 0, p: 0, f: 0, c: 0 });
+  el.hidden = false;
+  el.innerHTML = `
+    <table>
+      <thead><tr><th>食品</th><th>kcal</th><th>P</th><th>F</th><th>C</th></tr></thead>
+      <tbody>
+        ${scaled.map((i) => `<tr><td>${escapeHtml(i.name)}</td><td>${fmt1(i.cal)}</td><td>${fmt1(i.p)}</td><td>${fmt1(i.f)}</td><td>${fmt1(i.c)}</td></tr>`).join('')}
+      </tbody>
+      <tfoot><tr><td>合計</td><td>${fmt1(total.cal)}</td><td>${fmt1(total.p)}</td><td>${fmt1(total.f)}</td><td>${fmt1(total.c)}</td></tr></tfoot>
+    </table>
+  `;
+}
+
+function openResultForm({ name, cal, p, f, c, note, items }) {
   baseValues = { cal, p, f, c };
+  baseItems = items || [];
   $('#f-name').value = name;
   $('#f-cal').value = fmt1(cal);
   $('#f-p').value = fmt1(p);
@@ -307,6 +359,7 @@ function openResultForm({ name, cal, p, f, c, note }) {
   $('#f-mult').value = 1;
   $('#f-note').value = note || '';
   $('#f-datetime').value = toLocalDatetimeInputValue(new Date());
+  renderBreakdown(baseItems, 1);
   $('#result-card').hidden = false;
   $('#result-card').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
@@ -317,18 +370,29 @@ $('#f-mult').addEventListener('input', () => {
   $('#f-p').value = fmt1(baseValues.p * m);
   $('#f-f').value = fmt1(baseValues.f * m);
   $('#f-c').value = fmt1(baseValues.c * m);
+  renderBreakdown(baseItems, m);
 });
 
 $('#btn-manual').addEventListener('click', () => {
   analysisImageBase64 = null;
   storedThumbnail = null;
-  openResultForm({ name: '', cal: 0, p: 0, f: 0, c: 0, note: '' });
+  openResultForm({ name: '', cal: 0, p: 0, f: 0, c: 0, note: '', items: [] });
 });
 
 $('#btn-save').addEventListener('click', () => {
   const name = $('#f-name').value.trim();
   if (!name) { toast('料理名を入力してください'); return; }
   const dt = $('#f-datetime').value ? new Date($('#f-datetime').value) : new Date();
+  const mult = parseFloat($('#f-mult').value) || 1;
+  const scaledItems = baseItems.length
+    ? baseItems.map((i) => ({
+        name: i.name,
+        calories: fmt1(i.calories * mult),
+        protein: fmt1(i.protein * mult),
+        fat: fmt1(i.fat * mult),
+        carb: fmt1(i.carb * mult),
+      }))
+    : null;
 
   entries.push({
     id: crypto.randomUUID(),
@@ -341,11 +405,13 @@ $('#btn-save').addEventListener('click', () => {
     carb: parseFloat($('#f-c').value) || 0,
     note: $('#f-note').value.trim(),
     thumb: storedThumbnail,
+    items: scaledItems,
   });
   saveEntries();
 
   // フォームリセット
   $('#result-card').hidden = true;
+  $('#items-breakdown').hidden = true;
   $('#photo-preview').hidden = true;
   $('#photo-placeholder').hidden = false;
   $('#photo-input-camera').value = '';
@@ -354,6 +420,7 @@ $('#btn-save').addEventListener('click', () => {
   $('#text-input').value = '';
   analysisImageBase64 = null;
   storedThumbnail = null;
+  baseItems = [];
 
   toast('保存しました！');
   switchView('today');
@@ -399,21 +466,35 @@ function renderEntryList(container, list, { emptyMsg }) {
     return;
   }
   list.forEach((e) => {
-    const item = document.createElement('div');
-    item.className = 'entry-item';
+    const wrap = document.createElement('div');
     const time = new Date(e.datetime).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
-    item.innerHTML = `
-      ${e.thumb
-        ? `<img class="entry-thumb" src="${e.thumb}" alt="">`
-        : `<div class="entry-thumb placeholder">🍽️</div>`}
-      <div class="entry-main">
-        <div class="entry-name">${escapeHtml(e.name)}</div>
-        <div class="entry-sub">${time}・P${fmt1(e.protein)} F${fmt1(e.fat)} C${fmt1(e.carb)}</div>
+    const breakdownHtml = (e.items && e.items.length > 1)
+      ? `
+        <details class="entry-breakdown">
+          <summary>内訳を見る（${e.items.length}品目）</summary>
+          <table>
+            <thead><tr><th>食品</th><th>kcal</th><th>P</th><th>F</th><th>C</th></tr></thead>
+            <tbody>
+              ${e.items.map((i) => `<tr><td>${escapeHtml(i.name)}</td><td>${fmt1(i.calories)}</td><td>${fmt1(i.protein)}</td><td>${fmt1(i.fat)}</td><td>${fmt1(i.carb)}</td></tr>`).join('')}
+            </tbody>
+          </table>
+        </details>`
+      : '';
+    wrap.innerHTML = `
+      <div class="entry-item">
+        ${e.thumb
+          ? `<img class="entry-thumb" src="${e.thumb}" alt="">`
+          : `<div class="entry-thumb placeholder">🍽️</div>`}
+        <div class="entry-main">
+          <div class="entry-name">${escapeHtml(e.name)}</div>
+          <div class="entry-sub">${time}・P${fmt1(e.protein)} F${fmt1(e.fat)} C${fmt1(e.carb)}</div>
+        </div>
+        <div class="entry-cal">${Math.round(e.calories)}kcal</div>
+        <button class="entry-del" data-id="${e.id}" aria-label="削除">🗑️</button>
       </div>
-      <div class="entry-cal">${Math.round(e.calories)}kcal</div>
-      <button class="entry-del" data-id="${e.id}" aria-label="削除">🗑️</button>
+      ${breakdownHtml}
     `;
-    container.appendChild(item);
+    container.appendChild(wrap);
   });
   container.querySelectorAll('.entry-del').forEach((btn) => {
     btn.addEventListener('click', () => {
