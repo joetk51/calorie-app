@@ -114,6 +114,18 @@ document.querySelectorAll('.tab-btn').forEach((btn) => {
 let analysisImageBase64 = null; // 解析用(大きめ)
 let storedThumbnail = null; // 保存用(小さめ)
 
+function resetPhotoUI() {
+  $('#photo-preview').hidden = true;
+  $('#photo-preview').removeAttribute('src');
+  $('#photo-placeholder').hidden = false;
+  $('#btn-remove-photo').hidden = true;
+  $('#photo-input-camera').value = '';
+  $('#photo-input-gallery').value = '';
+  $('#btn-analyze').disabled = true;
+  analysisImageBase64 = null;
+  storedThumbnail = null;
+}
+
 async function handlePhotoFile(file) {
   if (!file) return;
 
@@ -129,6 +141,7 @@ async function handlePhotoFile(file) {
     $('#photo-preview').src = analysisDataUrl;
     $('#photo-preview').hidden = false;
     $('#photo-placeholder').hidden = true;
+    $('#btn-remove-photo').hidden = false;
     $('#btn-analyze').disabled = false;
     $('#result-card').hidden = true;
   } catch (err) {
@@ -137,6 +150,10 @@ async function handlePhotoFile(file) {
 }
 $('#photo-input-camera').addEventListener('change', (e) => handlePhotoFile(e.target.files[0]));
 $('#photo-input-gallery').addEventListener('change', (e) => handlePhotoFile(e.target.files[0]));
+$('#btn-remove-photo').addEventListener('click', () => {
+  resetPhotoUI();
+  $('#result-card').hidden = true;
+});
 
 const ANALYSIS_PROMPT = `あなたは経験豊富な管理栄養士です。添付された食事の写真を見て、写っている料理・食品を1品ずつ分けて特定し、それぞれの量を推定したうえで栄養価を計算してください。
 出力は必ず次のJSON形式のみとし、説明文やマークダウンのコードブロックは一切付けないでください。
@@ -211,15 +228,25 @@ async function callGeminiAPI(parts) {
     },
   };
 
+  const maxAttempts = 3;
   let res;
-  try {
-    res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-  } catch {
-    throw new Error('通信に失敗しました。ネット接続を確認してください。');
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    } catch {
+      throw new Error('通信に失敗しました。ネット接続を確認してください。');
+    }
+
+    // Googleサーバーが混雑中(503)の場合は少し待って自動再試行
+    if (res.status === 503 && attempt < maxAttempts) {
+      await new Promise((r) => setTimeout(r, attempt * 1500));
+      continue;
+    }
+    break;
   }
 
   if (!res.ok) {
@@ -227,6 +254,7 @@ async function callGeminiAPI(parts) {
     try { detail = (await res.json()).error?.message || ''; } catch {}
     if (res.status === 400) throw new Error('APIキーまたはモデル名が正しくない可能性があります(設定タブを確認)。' + (detail ? ` [${detail}]` : ''));
     if (res.status === 429) throw new Error('無料枠の上限に達しました。少し待って再試行してください。' + (detail ? ` [${detail}]` : ''));
+    if (res.status === 503) throw new Error('Googleのサーバーが混雑しています。数十秒待ってもう一度お試しください。' + (detail ? ` [${detail}]` : ''));
     throw new Error(`APIエラー (HTTP ${res.status})` + (detail ? ` [${detail}]` : ''));
   }
 
@@ -306,8 +334,7 @@ $('#btn-analyze-text').addEventListener('click', async () => {
   try {
     const result = await callGeminiText(description);
     statusEl.hidden = true;
-    analysisImageBase64 = null;
-    storedThumbnail = null;
+    resetPhotoUI();
     openResultForm(buildResultFromResponse(result));
     toast('解析が完了しました。内容を確認して保存してください。');
   } catch (err) {
@@ -374,8 +401,7 @@ $('#f-mult').addEventListener('input', () => {
 });
 
 $('#btn-manual').addEventListener('click', () => {
-  analysisImageBase64 = null;
-  storedThumbnail = null;
+  resetPhotoUI();
   openResultForm({ name: '', cal: 0, p: 0, f: 0, c: 0, note: '', items: [] });
 });
 
@@ -412,14 +438,8 @@ $('#btn-save').addEventListener('click', () => {
   // フォームリセット
   $('#result-card').hidden = true;
   $('#items-breakdown').hidden = true;
-  $('#photo-preview').hidden = true;
-  $('#photo-placeholder').hidden = false;
-  $('#photo-input-camera').value = '';
-  $('#photo-input-gallery').value = '';
-  $('#btn-analyze').disabled = true;
+  resetPhotoUI();
   $('#text-input').value = '';
-  analysisImageBase64 = null;
-  storedThumbnail = null;
   baseItems = [];
 
   toast('保存しました！');
