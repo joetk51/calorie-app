@@ -20,6 +20,12 @@
     <!-- 記録タブ -->
     <section id="view-log" class="view active">
       <div class="card">
+        <h3>⭐ よく使う項目</h3>
+        <div id="favorites-list" class="favorites-list"></div>
+        <p class="hint" id="favorites-empty-hint" hidden>解析結果の「⭐ よく使う項目に登録」、または設定タブから追加できます。</p>
+      </div>
+
+      <div class="card">
         <h3>写真から記録</h3>
         <div class="photo-drop" id="photo-drop-label">
           <img id="photo-preview" hidden alt="プレビュー">
@@ -32,6 +38,9 @@
           <input type="file" id="photo-input-gallery" accept="image/*" hidden>
           <label for="photo-input-gallery" class="btn-secondary">🖼️ アルバムから選択</label>
         </div>
+        <label>補足メモ（任意・解析精度が上がります）
+          <textarea id="photo-note-input" rows="2" placeholder="例: ご飯は大盛り、ソースを追加でかけました"></textarea>
+        </label>
         <button id="btn-analyze" class="btn-primary" disabled>✨ 写真をAIで解析する</button>
         <div id="analyze-status" class="status" hidden></div>
       </div>
@@ -77,6 +86,7 @@
           <input id="f-note" type="text" placeholder="任意">
         </label>
         <button id="btn-save" class="btn-primary">✅ 保存する</button>
+        <button id="btn-add-favorite" class="btn-secondary">⭐ よく使う項目に登録</button>
       </div>
 
       <button id="btn-manual" class="btn-secondary">写真・AIなしで手動追加</button>
@@ -141,6 +151,29 @@
           </label>
         </div>
         <button id="btn-save-goals" class="btn-primary">目標を保存</button>
+      </div>
+
+      <div class="card">
+        <h3>⭐ よく使う項目</h3>
+        <div id="settings-favorites-list" class="favorites-manage-list"></div>
+        <label>名前
+          <input id="fav-name" type="text" placeholder="例: プロテイン30g">
+        </label>
+        <label>カロリー (kcal)
+          <input id="fav-cal" type="number" step="1" inputmode="decimal">
+        </label>
+        <div class="grid-3">
+          <label>P (g)
+            <input id="fav-p" type="number" step="0.1" inputmode="decimal">
+          </label>
+          <label>F (g)
+            <input id="fav-f" type="number" step="0.1" inputmode="decimal">
+          </label>
+          <label>C (g)
+            <input id="fav-c" type="number" step="0.1" inputmode="decimal">
+          </label>
+        </div>
+        <button id="btn-add-favorite-settings" class="btn-secondary">追加</button>
       </div>
 
       <div class="card">

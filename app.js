@@ -3,6 +3,7 @@ const LS_KEYS = {
   entries: 'calorieApp_entries',
   settings: 'calorieApp_settings',
   goals: 'calorieApp_goals',
+  favorites: 'calorieApp_favorites',
 };
 
 const defaultSettings = { apiKey: '', model: 'gemini-3.5-flash' };
@@ -23,10 +24,12 @@ function saveJSON(key, value) {
 let entries = loadJSON(LS_KEYS.entries, []);
 let settings = { ...defaultSettings, ...loadJSON(LS_KEYS.settings, {}) };
 let goals = { ...defaultGoals, ...loadJSON(LS_KEYS.goals, {}) };
+let favorites = loadJSON(LS_KEYS.favorites, []);
 
 function saveEntries() { saveJSON(LS_KEYS.entries, entries); }
 function saveSettings() { saveJSON(LS_KEYS.settings, settings); }
 function saveGoals() { saveJSON(LS_KEYS.goals, goals); }
+function saveFavorites() { saveJSON(LS_KEYS.favorites, favorites); }
 
 // ---------- ユーティリティ ----------
 const $ = (sel) => document.querySelector(sel);
@@ -121,6 +124,7 @@ function resetPhotoUI() {
   $('#btn-remove-photo').hidden = true;
   $('#photo-input-camera').value = '';
   $('#photo-input-gallery').value = '';
+  $('#photo-note-input').value = '';
   $('#btn-analyze').disabled = true;
   analysisImageBase64 = null;
   storedThumbnail = null;
@@ -156,6 +160,7 @@ $('#btn-remove-photo').addEventListener('click', () => {
 });
 
 const ANALYSIS_PROMPT = `あなたは経験豊富な管理栄養士です。添付された食事の写真を見て、写っている料理・食品を1品ずつ分けて特定し、それぞれの量を推定したうえで栄養価を計算してください。
+補足情報（テキスト）が一緒に渡された場合は、写真だけでは判断しにくい分量・追加した調味料や食材・写真に写っていない品などの手がかりとして優先的に反映し、より正確な推定に役立ててください。
 出力は必ず次のJSON形式のみとし、説明文やマークダウンのコードブロックは一切付けないでください。
 {
   "mealName": "この食事全体の短い名前（日本語。例: 鶏の唐揚げ定食）",
@@ -181,11 +186,14 @@ itemsはユーザーが挙げた食品ごとに分けること。
 
 ユーザーの入力: `;
 
-function callGemini(base64Image) {
-  return callGeminiAPI([
-    { text: ANALYSIS_PROMPT },
-    { inline_data: { mime_type: 'image/jpeg', data: base64Image } },
-  ]);
+function callGemini(base64Image, extraNote) {
+  const parts = [{ text: ANALYSIS_PROMPT }];
+  const note = (extraNote || '').trim();
+  if (note) {
+    parts.push({ text: `【補足情報（ユーザー入力）】\n${note}` });
+  }
+  parts.push({ inline_data: { mime_type: 'image/jpeg', data: base64Image } });
+  return callGeminiAPI(parts);
 }
 
 function callGeminiText(description) {
@@ -282,7 +290,7 @@ $('#btn-analyze').addEventListener('click', async () => {
   $('#btn-analyze').disabled = true;
 
   try {
-    const result = await callGemini(analysisImageBase64);
+    const result = await callGemini(analysisImageBase64, $('#photo-note-input').value);
     statusEl.hidden = true;
     openResultForm(buildResultFromResponse(result));
     toast('解析が完了しました。内容を確認して保存してください。');
@@ -347,6 +355,7 @@ $('#btn-analyze-text').addEventListener('click', async () => {
 
 let baseValues = { cal: 0, p: 0, f: 0, c: 0 };
 let baseItems = [];
+let editingEntryId = null;
 
 function renderBreakdown(items, mult) {
   const el = $('#items-breakdown');
@@ -376,6 +385,8 @@ function renderBreakdown(items, mult) {
 }
 
 function openResultForm({ name, cal, p, f, c, note, items }) {
+  editingEntryId = null;
+  $('#btn-save').textContent = '✅ 保存する';
   baseValues = { cal, p, f, c };
   baseItems = items || [];
   $('#f-name').value = name;
@@ -388,6 +399,27 @@ function openResultForm({ name, cal, p, f, c, note, items }) {
   $('#f-datetime').value = toLocalDatetimeInputValue(new Date());
   renderBreakdown(baseItems, 1);
   $('#result-card').hidden = false;
+  $('#result-card').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function openEditForm(entry) {
+  editingEntryId = entry.id;
+  resetPhotoUI();
+  $('#text-input').value = '';
+  baseValues = { cal: entry.calories, p: entry.protein, f: entry.fat, c: entry.carb };
+  baseItems = entry.items || [];
+  $('#f-name').value = entry.name;
+  $('#f-cal').value = fmt1(entry.calories);
+  $('#f-p').value = fmt1(entry.protein);
+  $('#f-f').value = fmt1(entry.fat);
+  $('#f-c').value = fmt1(entry.carb);
+  $('#f-mult').value = 1;
+  $('#f-note').value = entry.note || '';
+  $('#f-datetime').value = toLocalDatetimeInputValue(new Date(entry.datetime));
+  renderBreakdown(baseItems, 1);
+  $('#btn-save').textContent = '✅ 更新する';
+  $('#result-card').hidden = false;
+  switchView('log');
   $('#result-card').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
@@ -420,8 +452,7 @@ $('#btn-save').addEventListener('click', () => {
       }))
     : null;
 
-  entries.push({
-    id: crypto.randomUUID(),
+  const entryData = {
     dateISO: toLocalDatetimeInputValue(dt).slice(0, 10),
     datetime: dt.toISOString(),
     name,
@@ -430,9 +461,18 @@ $('#btn-save').addEventListener('click', () => {
     fat: parseFloat($('#f-f').value) || 0,
     carb: parseFloat($('#f-c').value) || 0,
     note: $('#f-note').value.trim(),
-    thumb: storedThumbnail,
     items: scaledItems,
-  });
+  };
+
+  const wasEditing = !!editingEntryId;
+  if (wasEditing) {
+    const idx = entries.findIndex((e) => e.id === editingEntryId);
+    if (idx !== -1) entries[idx] = { ...entries[idx], ...entryData };
+  } else {
+    entries.push({ id: crypto.randomUUID(), thumb: storedThumbnail, ...entryData });
+  }
+  editingEntryId = null;
+  $('#btn-save').textContent = '✅ 保存する';
   saveEntries();
 
   // フォームリセット
@@ -442,8 +482,30 @@ $('#btn-save').addEventListener('click', () => {
   $('#text-input').value = '';
   baseItems = [];
 
-  toast('保存しました！');
-  switchView('today');
+  if (wasEditing) {
+    toast('更新しました！');
+    $('#history-date-picker').value = entryData.dateISO;
+    switchView('history');
+  } else {
+    toast('保存しました！');
+    switchView('today');
+  }
+});
+
+$('#btn-add-favorite').addEventListener('click', () => {
+  const name = $('#f-name').value.trim();
+  if (!name) { toast('料理名を入力してください'); return; }
+  favorites.push({
+    id: crypto.randomUUID(),
+    name,
+    calories: parseFloat($('#f-cal').value) || 0,
+    protein: parseFloat($('#f-p').value) || 0,
+    fat: parseFloat($('#f-f').value) || 0,
+    carb: parseFloat($('#f-c').value) || 0,
+  });
+  saveFavorites();
+  renderFavorites();
+  toast('⭐ よく使う項目に登録しました');
 });
 
 // ---------- 今日タブ ----------
@@ -510,11 +572,18 @@ function renderEntryList(container, list, { emptyMsg }) {
           <div class="entry-sub">${time}・P${fmt1(e.protein)} F${fmt1(e.fat)} C${fmt1(e.carb)}</div>
         </div>
         <div class="entry-cal">${Math.round(e.calories)}kcal</div>
+        <button class="entry-edit" data-id="${e.id}" aria-label="編集">✏️</button>
         <button class="entry-del" data-id="${e.id}" aria-label="削除">🗑️</button>
       </div>
       ${breakdownHtml}
     `;
     container.appendChild(wrap);
+  });
+  container.querySelectorAll('.entry-edit').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const entry = entries.find((e) => e.id === btn.dataset.id);
+      if (entry) openEditForm(entry);
+    });
   });
   container.querySelectorAll('.entry-del').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -602,6 +671,81 @@ function renderHistory() {
 
 $('#history-date-picker').addEventListener('change', renderHistory);
 
+// ---------- よく使う項目 ----------
+function renderFavorites() {
+  const listEl = $('#favorites-list');
+  const hintEl = $('#favorites-empty-hint');
+  if (favorites.length === 0) {
+    listEl.innerHTML = '';
+    hintEl.hidden = false;
+  } else {
+    hintEl.hidden = true;
+    listEl.innerHTML = favorites.map((f) => `
+      <button class="favorite-chip" data-id="${f.id}">
+        <span class="favorite-chip-name">${escapeHtml(f.name)}</span>
+        <span class="favorite-chip-cal">${Math.round(f.calories)}kcal</span>
+      </button>
+    `).join('');
+    listEl.querySelectorAll('.favorite-chip').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const fav = favorites.find((x) => x.id === btn.dataset.id);
+        if (!fav) return;
+        resetPhotoUI();
+        $('#text-input').value = '';
+        openResultForm({ name: fav.name, cal: fav.calories, p: fav.protein, f: fav.fat, c: fav.carb, note: '', items: [] });
+        toast(`「${fav.name}」を読み込みました。内容を確認して保存してください。`);
+      });
+    });
+  }
+  renderFavoritesSettings();
+}
+
+function renderFavoritesSettings() {
+  const el = $('#settings-favorites-list');
+  if (favorites.length === 0) {
+    el.innerHTML = `<p class="hint">登録されているよく使う項目はありません。</p>`;
+    return;
+  }
+  el.innerHTML = favorites.map((f) => `
+    <div class="favorite-row">
+      <div class="favorite-row-main">
+        <div class="favorite-row-name">${escapeHtml(f.name)}</div>
+        <div class="favorite-row-sub">${Math.round(f.calories)}kcal・P${fmt1(f.protein)} F${fmt1(f.fat)} C${fmt1(f.carb)}</div>
+      </div>
+      <button class="favorite-del" data-id="${f.id}" aria-label="削除">🗑️</button>
+    </div>
+  `).join('');
+  el.querySelectorAll('.favorite-del').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      favorites = favorites.filter((f) => f.id !== btn.dataset.id);
+      saveFavorites();
+      renderFavorites();
+      toast('削除しました');
+    });
+  });
+}
+
+$('#btn-add-favorite-settings').addEventListener('click', () => {
+  const name = $('#fav-name').value.trim();
+  if (!name) { toast('名前を入力してください'); return; }
+  favorites.push({
+    id: crypto.randomUUID(),
+    name,
+    calories: parseFloat($('#fav-cal').value) || 0,
+    protein: parseFloat($('#fav-p').value) || 0,
+    fat: parseFloat($('#fav-f').value) || 0,
+    carb: parseFloat($('#fav-c').value) || 0,
+  });
+  saveFavorites();
+  $('#fav-name').value = '';
+  $('#fav-cal').value = '';
+  $('#fav-p').value = '';
+  $('#fav-f').value = '';
+  $('#fav-c').value = '';
+  renderFavorites();
+  toast('⭐ 追加しました');
+});
+
 // ---------- 設定タブ ----------
 function loadSettingsToForm() {
   $('#s-apikey').value = settings.apiKey;
@@ -630,7 +774,7 @@ $('#btn-save-goals').addEventListener('click', () => {
 });
 
 $('#btn-export').addEventListener('click', () => {
-  const payload = { entries, settings: { model: settings.model }, goals, exportedAt: new Date().toISOString() };
+  const payload = { entries, settings: { model: settings.model }, goals, favorites, exportedAt: new Date().toISOString() };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -654,8 +798,14 @@ $('#import-file').addEventListener('change', (e) => {
       entries = entries.concat(merged);
       saveEntries();
       if (data.goals) { goals = { ...goals, ...data.goals }; saveGoals(); }
+      if (Array.isArray(data.favorites)) {
+        const existingFavIds = new Set(favorites.map((x) => x.id));
+        favorites = favorites.concat(data.favorites.filter((x) => !existingFavIds.has(x.id)));
+        saveFavorites();
+      }
       toast(`${merged.length}件の記録を取り込みました`);
       loadSettingsToForm();
+      renderFavorites();
       renderToday();
       renderHistory();
     } catch {
@@ -671,8 +821,10 @@ $('#btn-clear').addEventListener('click', () => {
   entries = [];
   settings = { ...defaultSettings };
   goals = { ...defaultGoals };
-  saveEntries(); saveSettings(); saveGoals();
+  favorites = [];
+  saveEntries(); saveSettings(); saveGoals(); saveFavorites();
   loadSettingsToForm();
+  renderFavorites();
   renderToday();
   renderHistory();
   toast('データを削除しました');
@@ -682,6 +834,7 @@ $('#btn-clear').addEventListener('click', () => {
 function init() {
   $('#header-date').textContent = new Date().toLocaleDateString('ja-JP', { month: 'long', day: 'numeric', weekday: 'short' });
   loadSettingsToForm();
+  renderFavorites();
   renderToday();
 }
 init();

@@ -220,9 +220,53 @@ button {
 .entry-name { font-weight: 600; font-size: 0.92rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .entry-sub { font-size: 0.78rem; color: var(--text-muted); margin-top: 2px; }
 .entry-cal { font-weight: 700; font-size: 0.95rem; white-space: nowrap; }
+.entry-edit,
 .entry-del {
   background: none; color: var(--text-muted); font-size: 1.1rem; padding: 4px 6px;
 }
+
+.favorites-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.favorite-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 12px;
+  color: var(--text);
+  font-size: 0.82rem;
+  max-width: 100%;
+}
+.favorite-chip:active { background: var(--border); }
+.favorite-chip-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 160px;
+}
+.favorite-chip-cal { color: var(--text-muted); font-size: 0.75rem; }
+
+.favorite-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+.favorite-row:last-child { border-bottom: none; }
+.favorite-row-main { flex: 1; min-width: 0; }
+.favorite-row-name {
+  font-weight: 600;
+  font-size: 0.88rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.favorite-row-sub { font-size: 0.75rem; color: var(--text-muted); margin-top: 2px; }
+.favorite-del { background: none; color: var(--text-muted); font-size: 1.05rem; padding: 4px 6px; }
 
 .breakdown {
   border: 1px solid var(--border);
